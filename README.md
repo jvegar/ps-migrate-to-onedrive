@@ -7,15 +7,11 @@ Install-Module -Name PnP.PowerShell
 
 ```
 
-## Create self-signed certificates
-
-```Powershell
-New-PnPAzureCertificate -OutPfx pnp.pfx -OutCert pnp.cer -CertificatePassword (ConvertTo-SecureString -String "pass@word1" -AsPlainText -Force)
-```
+## Configure app permission to site level
 
 ```XML
 <AppPermissionRequests AllowAppOnlyPolicy="true">
- <AppPermissionRequest Scope="http://sharepoint/content/sitecollection" Right="FullControl" />
+ <AppPermissionRequest Scope="http://sharepoint/content/sitecollection/web" Right="FullControl" />
 </AppPermissionRequests>
 ```
 
