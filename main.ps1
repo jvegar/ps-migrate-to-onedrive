@@ -1,7 +1,3 @@
-$CLIENT_ID = "c2f855dc-928f-46ab-9c58-0973d5864b07"
-$CLIENT_SECRET = "/tgWNg86Ca0V/SoibA2XAy7YEc8csapz4QYzvFNmsKk="
-$URL_SITE = "https://intercorpretail.sharepoint.com/sites/AppsCorporativas/er"
-
 function Clear-Log {
   Param(
     [string]$LogFile
@@ -21,7 +17,8 @@ function Export-List {
     [string]$ListName,
     [string[]]$Fields,
     [string]$Delimiter = ",",
-    [Int]$PageSize = 2000
+    [Int]$PageSize = 2000,
+    [string]$LogError = "errors.log"
   )
   Clear-Log $LogFile
   Write-Log ($Fields -join $Delimiter) -LogFile $LogFile
@@ -39,75 +36,58 @@ function Export-List {
             }   
           }
           else {
-            Write-Log "Error in item Id: $($a.Id) from List: $($ListName) -> Field $($_) is null." -LogFile $LOG_ERRORS
+            Write-Log "Error in item Id: $($a.Id) from List: $($ListName) -> Field $($_) is null." -LogFile $LogError
             $null
           }
         }) -join $Delimiter) -LogFile $LogFile
   }
 }
 
-########################
-#### EXPORTED FILES ####
-########################
-$LOG_ERRORS = "errors.log"
-$LOG_LIQUIDACIONES = "liquidaciones.csv"
-$LOG_LIQUIDACION_DETALLE = "liquidacionDetalle.csv"
-$LOG_LIQUIDACION_CABECERA = "liquidacionCabecera.csv"
-$LOG_RESULTADOS = "resultados.csv"
+try {
+  #### Loading config ####
+  $config = Import-PowerShellDataFile -Path ".\config.psd1"
 
-####################
-#### LIST NAMES ####
-####################
-$LISTA_LIQUIDACIONES = "Liquidaciones"     
-$LISTA_LIQUIDACION_DETALLE = "Lista: Liquidacion Detalle"
-$LISTA_LIQUIDACION_CABECERA = "Lista: Liquidacion Cabecera"
+  #### Connecting to SP site ####
+  Connect-PnPOnline -Url $config.SITE_URL -ClientId $config.CLIENT_ID -ClientSecret $config.CLIENT_SECRET
 
-################
-#### FIELDS ####
-################
-$FIELDS_LIQUIDACIONES = "ID", "FileRef", "Detalle"
-$FIELDS_LIQUIDACION_DETALLE = "ID", "Solicitud", "Liquidacion", "Title"
-$FIELDS_LIQUIDACION_CABECERA = "ID", "Solicitud", "AnioSAP", "Sociedad", "Title"
+  #### Exporting lists to files ####
+  Export-List -LogFile $config.LOG_LIQUIDACIONES -ListName $config.LISTA_LIQUIDACIONES -Fields $config.FIELDS_LIQUIDACIONES -Delimiter ";"
+  Export-List -LogFile $config.LOG_LIQUIDACION_DETALLE -ListName $config.LISTA_LIQUIDACION_DETALLE -Fields $config.FIELDS_LIQUIDACION_DETALLE -Delimiter ";"
+  Export-List -LogFile $config.LOG_LIQUIDACION_CABECERA -ListName $config.LISTA_LIQUIDACION_CABECERA -Fields $config.FIELDS_LIQUIDACION_CABECERA -Delimiter ";"
 
-Connect-PnPOnline -Url $URL_SITE -ClientId $CLIENT_ID -ClientSecret $CLIENT_SECRET
+  #### Importing Csv exported files ####
+  $itemsLiquidaciones = Import-Csv $config.LOG_LIQUIDACIONES -Delimiter ";"
+  $itemsLiquidacionDetalle = Import-Csv $config.LOG_LIQUIDACION_DETALLE -Delimiter ";"
+  $itemsLiquidacionCabecera = Import-Csv $config.LOG_LIQUIDACION_CABECERA -Delimiter ";"
 
-######################
-#### EXPORT LISTS ####
-######################
+  $hashTableLiquidacionDetalle = @{}
+  $hashTableLiquidacionCabecera = @{}
 
-Export-List -LogFile $LOG_LIQUIDACIONES -ListName $LISTA_LIQUIDACIONES -Fields $FIELDS_LIQUIDACIONES -Delimiter ";"
-# Export-List -LogFile $LOG_LIQUIDACION_DETALLE -ListName $LISTA_LIQUIDACION_DETALLE -Fields $FIELDS_LIQUIDACION_DETALLE -Delimiter ";"
-# Export-List -LogFile $LOG_LIQUIDACION_CABECERA -ListName $LISTA_LIQUIDACION_CABECERA -Fields $FIELDS_LIQUIDACION_CABECERA -Delimiter ";"
+  foreach ($item in $itemsLiquidacionDetalle) {
+    $hashTableLiquidacionDetalle[$item.ID] = $item
+  }
 
-$itemsLiquidaciones = Import-Csv $LOG_LIQUIDACIONES -Delimiter ";"
-$itemsLiquidacionDetalle = Import-Csv $LOG_LIQUIDACION_DETALLE -Delimiter ";"
-$itemsLiquidacionCabecera = Import-Csv $LOG_LIQUIDACION_CABECERA -Delimiter ";"
+  foreach ($item in $itemsLiquidacionCabecera) {
+    $hashTableLiquidacionCabecera[$item.Title] = $item
+  }
 
-# $hashTableLiquidaciones = @{}
-$hashTableLiquidacionDetalle = @{}
-$hashTableLiquidacionCabecera = @{}
-
-
-foreach ($item in $itemsLiquidacionDetalle) {
-  $hashTableLiquidacionDetalle[$item.ID] = $item
-}
-
-foreach ($item in $itemsLiquidacionCabecera) {
-  $hashTableLiquidacionCabecera[$item.Title] = $item
-}
-
-Write-Log "ID;FileRef;ID_CABECERA;Solicitud;AnioSAP;Sociedad;Title" -LogFile $LOG_RESULTADOS
-foreach ($item in $itemsLiquidaciones) {
-  $itemHashTableLiquidacionDetalle = $hashTableLiquidacionDetalle[$item.Detalle]
-  if ($null -ne $itemHashTableLiquidacionDetalle) {
-    $itemHashTableLiquidacionCabecera = $hashTableLiquidacionCabecera[$itemHashTableLiquidacionDetalle.Liquidacion]
-    if ($null -ne $itemHashTableLiquidacionCabecera) {
-      Write-Log "$($item.ID);$($item.FileRef);$($itemHashTableLiquidacionCabecera.PSObject.Properties.Value -join ";")" -LogFile $LOG_RESULTADOS
+  
+  #### Generating results file ####
+  Clear-Log -LogFile $config.LOG_RESULTADOS
+  Write-Log "ID;FileRef;ID_CABECERA;Solicitud;AnioSAP;Sociedad;Title" -LogFile $config.LOG_RESULTADOS
+  foreach ($item in $itemsLiquidaciones) {
+    $itemHashTableLiquidacionDetalle = $hashTableLiquidacionDetalle[$item.Detalle]
+    if ($null -ne $itemHashTableLiquidacionDetalle) {
+      $itemHashTableLiquidacionCabecera = $hashTableLiquidacionCabecera[$itemHashTableLiquidacionDetalle.Liquidacion]
+      if ($null -ne $itemHashTableLiquidacionCabecera) {
+        Write-Log "$($item.ID);$($item.FileRef);$($itemHashTableLiquidacionCabecera.PSObject.Properties.Value -join ";")" -LogFile $config.LOG_RESULTADOS
+      }
     }
   }
 }
+catch {
+  Write-Error "An error ocurred: $($_)"
+}
 
-# Write-Output $itemsLiquidaciones
-# Write-Output $itemsLiquidacionDetalle
-# Write-Output $itemsLiquidacionCabecera
+
 

@@ -1,4 +1,4 @@
 *.log
 *.old
 *.csv
-*.env
+*.psd1

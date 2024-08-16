@@ -1,13 +1,19 @@
 ### Prerequisites
 
-## Install PnP Module
+## Install required modules
 
-```Powershell
+```Powershell module
 Install-Module -Name PnP.PowerShell
-
 ```
 
-## Configure app permission to site level
+## Set config values
+
+1. Rename `config.psd1.sample` to `config.psd1`.
+2. Update the required config values.
+
+## Configure app permissions
+
+Use the above XML file to set app permissions level to site.
 
 ```XML
 <AppPermissionRequests AllowAppOnlyPolicy="true">
