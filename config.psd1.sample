@@ -10,6 +10,7 @@
     LOG_LIQUIDACION_DETALLE     = "liquidacionDetalle.csv"
     LOG_LIQUIDACION_CABECERA    = "liquidacionCabecera.csv"
     LOG_RESULTADOS              = "resultados.csv"
+    LOG_EXPORTADOS              = "exportados.csv"
 
     #### LIST NAMES TO EXPORT ####
     LISTA_LIQUIDACIONES         = "Liquidaciones"     
@@ -17,7 +18,7 @@
     LISTA_LIQUIDACION_CABECERA  = "Lista: Liquidacion Cabecera"
 
     #### FIELDS TO EXPORT ####
-    FIELDS_LIQUIDACIONES        = "ID", "FileRef", "Detalle"
+    FIELDS_LIQUIDACIONES        = "ID", "FileRef", "Created_x0020_Date", "File_x0020_Size", "Detalle"
     FIELDS_LIQUIDACION_DETALLE  = "ID", "Solicitud", "Liquidacion", "Title"
     FIELDS_LIQUIDACION_CABECERA = "ID", "Solicitud", "AnioSAP", "Sociedad", "Title"
 }
