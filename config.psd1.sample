@@ -21,4 +21,6 @@
     FIELDS_LIQUIDACIONES        = "ID", "FileRef", "Created_x0020_Date", "File_x0020_Size", "Detalle"
     FIELDS_LIQUIDACION_DETALLE  = "ID", "Solicitud", "Liquidacion", "Title"
     FIELDS_LIQUIDACION_CABECERA = "ID", "Solicitud", "AnioSAP", "Sociedad", "Title"
+
+    BACKUP_PATH = path_to_backup_onedrive_files
 }

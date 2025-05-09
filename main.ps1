@@ -43,6 +43,49 @@ function Export-List {
         }) -join $Delimiter) -LogFile $LogFile
   }
 }
+function Backup-File {
+  Param(
+    [object]$Item, 
+    [string]$BackupPath=$config.BACKUP_PATH,
+    [string]$Type='default',
+    [Int]$Year,
+    [Int]$MonthGt,
+    [Int]$MonthLt
+  )
+  # Write-Host "Backing up item: $($item)"
+  ### Validate if type='custom'
+  if ($Type -eq 'custom') {
+    if ($null -eq $Item.AnioSAP -or $null -eq $Item.Sociedad -or $null -eq $Item.Solicitud) {
+      Write-Host 'There is some missing properties (AnioSAP, Sociedad, Solicitud)'
+      return $false
+    } 
+  }
+    
+  ### Item doesn't have Detalle, so it will backed up following a default hierarchy: [year]/[month]/[filename]
+  $createdDateTime = [DateTime]::ParseExact($Item.Created_x0020_Date, "yyyy-MM-ddTHH:mm:ssZ", [System.Globalization.CultureInfo]::InvariantCulture)
+
+  # Define date range to be backed up
+  if ($createdDateTime.Year -eq $year -and $createdDateTime.Month -gt $monthGt -and $createdDateTime.Month -lt $monthLt) {
+    $fileRef = $Item.FileRef
+    $fileLeafRef = Split-Path $fileRef -Leaf
+    if ($Type -eq 'default') {
+      $dirPath = "$($BackupPath)/$($createdDateTime.Year)/$($createdDateTime.Month)"
+    } else {
+      $dirPath = "$($BackupPath)/$($Item.AnioSAP)/$($createdDateTime.Month)/$($item.Sociedad)/$($item.Solicitud)"
+    }
+    $fullPath = "$($dirPath)/$($fileLeafRef)"
+    if (Test-Path $fullPath -PathType Leaf) {
+      Write-Host "The file $($fullPath) has already been backed up."
+    }
+    else {
+      New-Item -ItemType Directory -Force -Path $dirPath
+      Write-Host  "Downloading file $($fileRef)"
+      Get-PnPFile -Url $fileRef -Path $dirPath -Filename $fileLeafRef -AsFile -ErrorAction Ignore
+      Write-Host  "Removing file $($fileRef)"
+      Remove-PnPFile -ServerRelativeUrl $fileRef -Force
+    }
+  }
+}
 
 $maxRetries = 3
 $retryCount = 0
@@ -58,12 +101,12 @@ while (-not $success -and $retryCount -lt $maxRetries) {
     $importCsvDataToCol = $true
     $convertColToDictionaries = $true
     $generateResultsFile = $true
-    $downloadFiles = $false
+    $downloadFiles = $true
 
     Write-Host "Connecting to SharePoint site..."
     Connect-PnPOnline -Url $config.SITE_URL -ClientId $config.CLIENT_ID -ClientSecret $config.CLIENT_SECRET
 
-    #### Exporting libraries data to CSV files ####
+    #### Export libraries data to CSV files ####
     if ($exportDataToCSVFiles) {
       Write-Host "Exporting list data to CSV files..."
       Export-List -LogFile $config.LOG_LIQUIDACIONES -ListName $config.LISTA_LIQUIDACIONES -Fields $config.FIELDS_LIQUIDACIONES -Delimiter "|"
@@ -72,113 +115,81 @@ while (-not $success -and $retryCount -lt $maxRetries) {
       Export-List -LogFile $config.LOG_SOLICITUD -ListName $config.LISTA_SOLICITUD -Fields $config.FIELDS_SOLICITUD -Delimiter "|"
     }
 
-    #### Importing CSV files to collections ####
+    #### Import CSV files to collections ####
     if ($importCsvDataToCol) { 
       Write-Host "Importing CSV files..."
-      $itemsLiquidaciones = Import-Csv $config.LOG_LIQUIDACIONES -Delimiter "|"
-      $itemsLiquidacionDetalle = Import-Csv $config.LOG_LIQUIDACION_DETALLE -Delimiter "|"
-      $itemsLiquidacionCabecera = Import-Csv $config.LOG_LIQUIDACION_CABECERA -Delimiter "|"
-      $itemsSolicitud = Import-Csv $config.LOG_SOLICITUD -Delimiter "|"
+      $itemsCsvLiquidaciones = Import-Csv $config.LOG_LIQUIDACIONES -Delimiter "|"
+      $itemsCsvLiquidacionDetalle = Import-Csv $config.LOG_LIQUIDACION_DETALLE -Delimiter "|"
+      $itemsCsvLiquidacionCabecera = Import-Csv $config.LOG_LIQUIDACION_CABECERA -Delimiter "|"
+      $itemsCsvSolicitud = Import-Csv $config.LOG_SOLICITUD -Delimiter "|"
     }
 
-    #### Converting collections to dictionaries ####
+    #### Convert collections to dictionaries for better performance ####
     if ($convertColToDictionaries) {
-      Write-Host "Creating hash tables..."
+      Write-Host "Creating dictionaries..."
       $dictLiquidacionDetalle = @{}
       $dictLiquidacionCabecera = @{}
       $dictSolicitud = @{}
 
-      foreach ($item in $itemsLiquidacionDetalle) {
+      foreach ($item in $itemsCsvLiquidacionDetalle) {
         if ($null -ne $item.ID -and $item.ID -ne '') {
           $dictLiquidacionDetalle[$item.ID] = $item
         }
       }
 
-      foreach ($item in $itemsLiquidacionCabecera) {
+      foreach ($item in $itemsCsvLiquidacionCabecera) {
         if ($null -ne $item.Title -and $item.Title -ne '') {
           $dictLiquidacionCabecera[$item.Title] = $item
         }
       }
 
-      foreach ($item in $itemsSolicitud) {
+      foreach ($item in $itemsCsvSolicitud) {
         if ($null -ne $item.Title -and $item.Title -ne '') {
           $dictSolicitud[$item.Title] = $item
         }
       }
     }
 
-    #### Generating results file ####
+    #### Generate results file ####
     if ($generateResultsFile) {
+      # Generate Log 
       Clear-Log -LogFile $config.LOG_RESULTADOS
       Write-Log $config.FIELDS_LOG_RESULTADOS -LogFile $config.LOG_RESULTADOS
 
-      ### Iterating liquidaciones
-      foreach ($item in $itemsLiquidaciones) {
+      ### Iterate liquidaciones items
+      foreach ($item in $itemsCsvLiquidaciones) {
         ### Get item from dictLiquidacionDetalle
         $itemDictLiquidacionDetalle = $dictLiquidacionDetalle[$item.Detalle]
         ### Validate if itemDictLiquidacionDetalle is not null
         if ($null -ne $itemDictLiquidacionDetalle) {
+          ### Decided to use Liquidacion_MG instead of Liquidacion, as Liquidacion could be null 
           $itemDictLiquidacionCabecera = $dictLiquidacionCabecera[$itemDictLiquidacionDetalle.Liquidacion_MG]
           ### Validate if itemDictLiquidacionCabecera is not null
           if ($null -ne $itemDictLiquidacionCabecera) {
             $itemDictSolicitud = $dictSolicitud[$itemDictLiquidacionCabecera.Solicitud]
             if ($itemDictSolicitud.Estado -eq "Liquidado") {
+              Write-Host "Backing up item Liquidado: $($itemDictSolicitud)"
               Write-Log "$($item.ID);$($item.FileRef);$($item.Created_x0020_Date);$($item.File_x0020_Size);$($itemDictLiquidacionCabecera.PSObject.Properties.Value -join ";");$($itemDictSolicitud.Estado)" -LogFile $config.LOG_RESULTADOS
             }
           }
           else {
+            ### Use Solicitud_MG if there is no liquidacionCabecera
             $itemDictSolicitud = $dictSolicitud[$itemDictLiquidacionDetalle.Solicitud_MG]
             if ($null -ne $itemDictSolicitud) {
               if ($itemDictSolicitud.Estado -eq "Liquidado") {
+                Write-Host "Backing up item Liquidado: $($itemDictSolicitud)"
                 Write-Log "$($item.ID);$($item.FileRef);$($item.Created_x0020_Date);$($item.File_x0020_Size);$($itemDictLiquidacionCabecera.PSObject.Properties.Value -join ";");$($itemDictSolicitud.Estado)" -LogFile $config.LOG_RESULTADOS
               }
             }
             else {
-              $createdDateTime = [DateTime]::ParseExact($item.Created_x0020_Date, "yyyy-MM-ddTHH:mm:ssZ", [System.Globalization.CultureInfo]::InvariantCulture)
-              # if ($createdDateTime.Year -eq 2022) {
-                if ($createdDateTime.Year -eq 2024 -and $createdDateTime.Month -gt 3 -and $createdDateTime.Month -lt 7) {
-                try {
-                  $fileRef = $item.FileRef
-                  $fileLeafRef = Split-Path $fileRef -Leaf
-                  $pathFile = "$($config.BACKUP_PATH)/$($createdDateTime.Year )/$($createdDateTime.Month)"
-                  $fullPath = "$($pathFile)/$($fileLeafRef)"
-                  if (Test-Path $fullPath -PathType Leaf) {
-                    Write-Host "The file $($fullPath) already exists."
-                  }
-                  else {
-                    New-Item -ItemType Directory -Force -Path $pathFile
-                    Write-Host  "Downloading file $($fileRef)"
-                    Get-PnPFile -Url $fileRef -Path $pathFile -Filename $fileLeafRef -AsFile -ErrorAction Ignore
-                    Write-Host  "Removing file $($fileRef)"
-                    Remove-PnPFile -ServerRelativeUrl $fileRef -Force
-                  }
-                }
-                catch {
-                  <#Do this if a terminating exception happens#>
-                }
-              }
+              ### The item doesn't have liquidacionCabecera nor Solicitud_MG
+              # Backup-File -Item $item -BackupPath $config.BACKUP_PATH -Year 2024 -MonthGt 10 -MonthLt 13
             }
           }
         }
         else {
-          $createdDateTime = [DateTime]::ParseExact($item.Created_x0020_Date, "yyyy-MM-ddTHH:mm:ssZ", [System.Globalization.CultureInfo]::InvariantCulture)
-          # if ($createdDateTime.Year -eq 2022) {
-            if ($createdDateTime.Year -eq 2024 -and $createdDateTime.Month -gt 3 -and $createdDateTime.Month -lt 7) {
-            $fileRef = $item.FileRef
-            $fileLeafRef = Split-Path $fileRef -Leaf
-            $pathFile = "$($config.BACKUP_PATH)/$($createdDateTime.Year )/$($createdDateTime.Month)"
-            $fullPath = "$($pathFile)/$($fileLeafRef)"
-            if (Test-Path $fullPath -PathType Leaf) {
-              Write-Host "The file $($fullPath) already exists."
-            }
-            else {
-              New-Item -ItemType Directory -Force -Path $pathFile
-              Write-Host  "Downloading file $($fileRef)"
-              Get-PnPFile -Url $fileRef -Path $pathFile -Filename $fileLeafRef -AsFile -ErrorAction Ignore
-              Write-Host  "Removing file $($fileRef)"
-              Remove-PnPFile -ServerRelativeUrl $fileRef -Force
-            }
-          }
+          ### The item doesn't have liquidacionDetalle
+          # Backup-File -Item $item -BackupPath $config.BACKUP_PATH -Year 2024 -MonthGt 10 -MonthLt 13
         }
       }
     }
@@ -188,29 +199,9 @@ while (-not $success -and $retryCount -lt $maxRetries) {
       $itemsResultados = Import-Csv $config.LOG_RESULTADOS -Delimiter ";"
 
       foreach ($item in $itemsResultados) {
-
-        $fileRef = $item.FileRef
-        $fileLeafRef = Split-Path $fileRef -Leaf
-        $createdDateTime = [DateTime]::ParseExact($item.Created_x0020_Date, "yyyy-MM-ddTHH:mm:ssZ", [System.Globalization.CultureInfo]::InvariantCulture)
-        #### Create path if not exists
-        if ($createdDateTime.Year -eq 2024 -and $createdDateTime.Month -gt 3 -and $createdDateTime.Month -lt 7) {
-          if ($null -ne $item.AnioSAP -and $null -ne $item.Sociedad -and $null -ne $item.Solicitud) {
-            $pathFile = "$($config.BACKUP_PATH)/$($item.AnioSAP)/$($createdDateTime.Month)/$($item.Sociedad)/$($item.Solicitud)"
-            $fullPath = "$($pathFile)/$($fileLeafRef)"
-            if (Test-Path $fullPath -PathType Leaf) {
-              Write-Host "The file $($fullPath) already exists."
-            }
-            else {
-              New-Item -ItemType Directory -Force -Path $pathFile
-              Get-PnPFile -Url $fileRef -Path $pathFile -Filename $fileLeafRef -AsFile
-            }
-            Write-Host  "Removing file $($fileRef)"
-            Remove-PnPFile -ServerRelativeUrl $fileRef -Force
-          }
-        }
+        Backup-File -Item $item -BackupPath $config.BACKUP_PATH -Type 'custom' -Year 2024 -MonthGt 10 -MonthLt 13
       }
     }
-
     $success = $true  # If we reach this point without exceptions, set success to true
   }
   catch {
