@@ -46,8 +46,8 @@ function Export-List {
 function Backup-File {
   Param(
     [object]$Item, 
-    [string]$BackupPath=$config.BACKUP_PATH,
-    [string]$Type='default',
+    [string]$BackupPath = $config.BACKUP_PATH,
+    [string]$Type = 'default',
     [Int]$Year,
     [Int]$MonthGt,
     [Int]$MonthLt
@@ -70,7 +70,8 @@ function Backup-File {
     $fileLeafRef = Split-Path $fileRef -Leaf
     if ($Type -eq 'default') {
       $dirPath = "$($BackupPath)/$($createdDateTime.Year)/$($createdDateTime.Month)"
-    } else {
+    }
+    else {
       $dirPath = "$($BackupPath)/$($Item.AnioSAP)/$($createdDateTime.Month)/$($item.Sociedad)/$($item.Solicitud)"
     }
     $fullPath = "$($dirPath)/$($fileLeafRef)"
@@ -101,7 +102,7 @@ while (-not $success -and $retryCount -lt $maxRetries) {
     $importCsvDataToCol = $true
     $convertColToDictionaries = $true
     $generateResultsFile = $true
-    $downloadFiles = $true
+    $downloadFiles = $false
 
     Write-Host "Connecting to SharePoint site..."
     Connect-PnPOnline -Url $config.SITE_URL -ClientId $config.CLIENT_ID -ClientSecret $config.CLIENT_SECRET
@@ -158,22 +159,24 @@ while (-not $success -and $retryCount -lt $maxRetries) {
 
       ### Iterate liquidaciones items
       foreach ($item in $itemsCsvLiquidaciones) {
-        ### Get item from dictLiquidacionDetalle
+        ### Get item details
         $itemDictLiquidacionDetalle = $dictLiquidacionDetalle[$item.Detalle]
-        ### Validate if itemDictLiquidacionDetalle is not null
+        ### Validate if item has details
         if ($null -ne $itemDictLiquidacionDetalle) {
-          ### Decided to use Liquidacion_MG instead of Liquidacion, as Liquidacion could be null 
+          ### Get item header using Liquidacion_MG from details
           $itemDictLiquidacionCabecera = $dictLiquidacionCabecera[$itemDictLiquidacionDetalle.Liquidacion_MG]
-          ### Validate if itemDictLiquidacionCabecera is not null
+          ### Validate if item has header
           if ($null -ne $itemDictLiquidacionCabecera) {
+            ## Get item solicitud using Solicitud from header
             $itemDictSolicitud = $dictSolicitud[$itemDictLiquidacionCabecera.Solicitud]
+
             if ($itemDictSolicitud.Estado -eq "Liquidado") {
               Write-Host "Backing up item Liquidado: $($itemDictSolicitud)"
               Write-Log "$($item.ID);$($item.FileRef);$($item.Created_x0020_Date);$($item.File_x0020_Size);$($itemDictLiquidacionCabecera.PSObject.Properties.Value -join ";");$($itemDictSolicitud.Estado)" -LogFile $config.LOG_RESULTADOS
             }
           }
           else {
-            ### Use Solicitud_MG if there is no liquidacionCabecera
+            ### Get item solicitud using Solicitud_MG from details
             $itemDictSolicitud = $dictSolicitud[$itemDictLiquidacionDetalle.Solicitud_MG]
             if ($null -ne $itemDictSolicitud) {
               if ($itemDictSolicitud.Estado -eq "Liquidado") {
@@ -183,13 +186,13 @@ while (-not $success -and $retryCount -lt $maxRetries) {
             }
             else {
               ### The item doesn't have liquidacionCabecera nor Solicitud_MG
-              # Backup-File -Item $item -BackupPath $config.BACKUP_PATH -Year 2024 -MonthGt 10 -MonthLt 13
+              Backup-File -Item $item -BackupPath $config.BACKUP_PATH -Year 2024 -MonthGt 10 -MonthLt 13
             }
           }
         }
         else {
           ### The item doesn't have liquidacionDetalle
-          # Backup-File -Item $item -BackupPath $config.BACKUP_PATH -Year 2024 -MonthGt 10 -MonthLt 13
+          Backup-File -Item $item -BackupPath $config.BACKUP_PATH -Year 2024 -MonthGt 10 -MonthLt 13
         }
       }
     }
